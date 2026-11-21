@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Uniform-Cost Search (UCS) Visualizer - Least-Cost Route Planning</title>
+  <link rel="stylesheet" href="styles.css">
+  <!-- Offline standalone Vis-network -->
+  <script src="vis-network.min.js"></script>
+</head>
+<body>
+
+  <!-- Top Navigation & Brand Header -->
+  <header class="app-header">
+    <div class="brand-section">
+      <div class="brand-icon">⚡</div>
+      <div>
+        <div class="brand-title">
+          Uniform-Cost Search (UCS)
+          <span class="badge-tag">Min-Heap Router</span>
+        </div>
+        <div class="brand-subtitle">Least-Cost Path Planning on Weighted Graphs · AI Lab Project</div>
+      </div>
+    </div>
+
+    <!-- 1-Click Preset Scenario Buttons -->
+    <div class="preset-bar">
+      <span class="preset-label">Presets:</span>
+      <button class="preset-btn active" id="preset-1" title="1-hop expensive route vs 3-hop cheaper route">
+        🌟 1. Main Demo (Direct vs Indirect)
+      </button>
+      <button class="preset-btn" id="preset-2" title="Two distinct routes with identical total cost">
+        ⚖️ 2. Equal-Cost Routes
+      </button>
+      <button class="preset-btn" id="preset-3" title="Separate components with no path to Goal">
+        🚫 3. Disconnected Graph
+      </button>
+      <button class="preset-btn" id="preset-4" title="Graph with 0-weight edges without loops">
+        ⚡ 4. Zero-Cost Edge
+      </button>
+      <button class="preset-btn preset-error" id="preset-5" title="Graph containing negative edge to test validation">
+        ⚠️ 5. Negative Weight (Error)
+      </button>
+    </div>
+  </header>
+
+  <!-- Negative Weight Alert Banner (Dynamically shown when w < 0) -->
+  <div id="alert-banner" class="alert-banner" style="display: none;">
+    <div class="alert-content">
+      <span class="alert-icon">⚠️</span>
+      <div>
+        <div class="alert-title">Input Validation Error: Negative Edge Weight Detected!</div>
+        <div id="alert-message">Uniform-Cost Search strictly requires all edge weights to be non-negative (w &ge; 0). Negative weights violate the non-decreasing path-cost invariant $g(u) \le g(v)$ and cause premature/incorrect termination with Min-Heap Priority Queues.</div>
+      </div>
+    </div>
+    <button class="alert-btn" id="btn-fix-negative">Fix Weights (Set to 0)</button>
+  </div>
+
+  <!-- Main Dashboard Layout -->
+  <main class="main-dashboard">
+
+    <!-- Left: Graph Canvas and Route Summary -->
+    <div class="graph-column">
+    <section class="canvas-panel">
+      <!-- Canvas Toolbar & Legends -->
+      <div class="canvas-toolbar">
+        <div class="canvas-legend">
+          <div class="legend-item"><span class="legend-dot start"></span> Start</div>
+          <div class="legend-item"><span class="legend-dot goal"></span> Goal</div>
+          <div class="legend-item"><span class="legend-dot current"></span> Expanding</div>
+          <div class="legend-item"><span class="legend-dot frontier"></span> In Priority Queue</div>
+          <div class="legend-item"><span class="legend-dot visited"></span> Finalized</div>
+          <div class="legend-item"><span class="legend-dot path"></span> Optimal Path</div>
+        </div>
+
+        <div class="toolbar-group">
+          <button class="tool-btn" id="btn-fit-view" title="Center and fit graph on canvas">🎯 Fit</button>
+          <button class="tool-btn" id="btn-toggle-physics" title="Toggle physics simulation">⚛️ Physics: On</button>
+          <button class="tool-btn" id="btn-clear-canvas" title="Clear all nodes and edges">🗑️ Clear</button>
+        </div>
+      </div>
+
+      <!-- Canvas Container -->
+      <div id="network-canvas"></div>
+
+      <!-- Floating Live Status Callout on Canvas -->
+      <div class="canvas-overlay-status" id="canvas-status-bar">
+        <div class="status-indicator">
+          <div class="status-pulse idle" id="status-pulse"></div>
+          <div>
+            <div class="status-text-title" id="status-headline">Ready to Search</div>
+            <div class="status-text-sub" id="status-subtext">Select a preset or click 'Step-by-Step' or 'Run Instant' to begin.</div>
+          </div>
+        </div>
+        <div id="step-counter-badge" class="badge-tag" style="font-family: var(--font-mono);">Step 0 / 0</div>
+      </div>
+    </section>
+
+    <!-- Comparison Summary Card -->
+    <div class="card summary-card" id="summary-card">
+      <div class="card-header">
+        <div class="card-title" style="color: #fbbf24;">
+          🏆 Route Comparison Summary
+        </div>
+        <span class="badge-tag" id="summary-status-badge">Awaiting Run</span>
+      </div>
+
+      <div class="metrics-grid">
+        <div class="metric-box">
+          <div class="metric-title">Total Cost</div>
+          <div class="metric-value cost" id="metric-total-cost">--</div>
+        </div>
+        <div class="metric-box">
+          <div class="metric-title">Path Hops</div>
+          <div class="metric-value hops" id="metric-total-hops">--</div>
+        </div>
+        <div class="metric-box">
+          <div class="metric-title">Stale Skips</div>
+          <div class="metric-value skips" id="metric-stale-skips">0</div>
+        </div>
+      </div>
+
+      <div class="route-display" id="metric-final-route">
+        <span>Route:</span> <span id="route-path-text" style="font-weight: 700;">No path computed yet</span>
+      </div>
+
+      <div class="bfs-comparison-box" id="bfs-comparison-box">
+        <div class="bfs-comparison-title">
+          <span>💡 Fewest-Hop vs. Lowest-Cost Comparison</span>
+        </div>
+        <div class="bfs-details">
+          <div><strong>Fewest-Hop (BFS):</strong> <span id="bfs-hop-info">-- hops (cost: --)</span></div>
+          <div><strong>UCS Least-Cost:</strong> <span id="ucs-cost-info">-- hops (cost: --)</span></div>
+        </div>
+        <div class="bfs-callout-verdict" id="bfs-verdict-text">
+          Run Uniform-Cost Search on Preset 1 to observe why the fewest-edge path (1 hop, cost 10) is suboptimal compared to the 3-hop path (cost 6).
+        </div>
+      </div>
+    </div>
+    </div>
+
+    <!-- Right: Controls, Priority Queue, Visited Table, Summary Card -->
+    <aside class="sidebar-panel">
+
+      <!-- Add Node & Edge Form -->
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">
+            <span class="card-title-icon">✏️</span> Add / Edit Graph
+          </div>
+        </div>
+
+        <div style="display: flex; flex-direction: column; gap: 0.75rem;">
+          <!-- Add Node Row -->
+          <div style="display: flex; gap: 0.5rem; align-items: flex-end;">
+            <div class="form-group" style="flex: 1;">
+              <label class="form-label">New Node Name</label>
+              <input type="text" class="form-input" id="input-node-name" placeholder="e.g. Node_C">
+            </div>
+            <button class="btn-secondary" id="btn-add-node" style="padding: 0.45rem 0.75rem;">+ Node</button>
+          </div>
+          <div class="node-list-container" id="node-list" aria-label="Graph nodes"></div>
+
+          <!-- Add Edge Form -->
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem;">
+            <div class="form-group">
+              <label class="form-label">From Node</label>
+              <select class="form-select" id="edge-from-select"></select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">To Node</label>
+              <select class="form-select" id="edge-to-select"></select>
+            </div>
+          </div>
+
+          <div style="display: flex; gap: 0.5rem; align-items: flex-end;">
+            <div class="form-group" style="flex: 1;">
+              <label class="form-label">Edge Weight ($w \ge 0$)</label>
+              <input type="number" step="0.5" class="form-input" id="edge-weight-input" placeholder="e.g. 3.0" value="2.0">
+            </div>
+            <div class="form-group" style="display: flex; flex-direction: row; align-items: center; gap: 0.35rem; padding-bottom: 0.5rem;">
+              <input type="checkbox" id="edge-directed-check" checked style="accent-color: var(--accent-indigo);">
+              <label for="edge-directed-check" class="form-label" style="cursor: pointer;">Directed</label>
+            </div>
+            <button class="btn-primary" id="btn-add-edge" style="padding: 0.45rem 0.75rem;">+ Edge</button>
+            <button class="btn-secondary" id="btn-cancel-edge-edit" style="padding: 0.45rem 0.75rem; display: none;">Cancel</button>
+          </div>
+          <input type="hidden" id="editing-edge-id">
+        </div>
+      </div>
+
+      <!-- Current Graph Edges List -->
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">
+            <span class="card-title-icon">🔗</span> Graph Edges List (<span id="edge-count-label">0</span>)
+          </div>
+          <span style="font-size: 0.72rem; color: var(--text-dim);">Click ❌ to remove edge</span>
+        </div>
+        <div class="edge-list-container" id="edge-list">
+          <!-- Dynamically populated -->
+        </div>
+      </div>
+
+      <!-- Execution Controls Card -->
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">
+            <span class="card-title-icon">🕹️</span> Execution Controls
+          </div>
+          <div class="badge-tag" id="search-mode-tag">Manual Stepper</div>
+        </div>
+
+        <!-- Primary Actions: Run Instant & Auto Play -->
+        <div class="controls-grid">
+          <button class="btn-success" id="btn-run-instant" title="Compute final least-cost route immediately">
+            ⚡ Run Instant
+          </button>
+          <button class="btn-primary" id="btn-play-pause" title="Auto-advance through search steps">
+            ▶️ Play
+          </button>
+        </div>
+
+        <!-- Stepper Navigation: Back, Step, Reset -->
+        <div class="stepper-row">
+          <button class="btn-secondary" id="btn-step-back" title="Rewind to previous algorithm step" disabled>
+            ⏮️ Back
+          </button>
+          <button class="btn-secondary" id="btn-step-forward" title="Advance one algorithm step">
+            ⏭️ Step
+          </button>
+          <button class="btn-secondary" id="btn-reset-search" title="Reset search to beginning">
+            🔄 Reset
+          </button>
+        </div>
+
+        <!-- Speed Slider for Auto Play -->
+        <div class="speed-control">
+          <span class="speed-label">Speed:</span>
+          <input type="range" class="speed-slider" id="speed-slider" min="150" max="1800" step="50" value="700">
+          <span class="speed-val" id="speed-display">0.7s</span>
+        </div>
+
+        <!-- Start & Goal Node Selectors -->
+        <div class="endpoint-selectors">
+          <div class="form-group">
+            <label class="form-label" for="select-start">🟢 Start Node</label>
+            <select class="form-select" id="select-start"></select>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="select-goal">🔴 Goal Node</label>
+            <select class="form-select" id="select-goal"></select>
+          </div>
+        </div>
+      </div>
+
+      <!-- Priority Queue (Min-Heap) Live State Card -->
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">
+            <span class="card-title-icon">📊</span> Priority Queue (Min-Heap)
+          </div>
+          <span class="badge-tag" id="pq-count-badge">0 items</span>
+        </div>
+
+        <!-- Live Stale Warning Callout (shown if popped node is stale) -->
+        <div id="pq-stale-alert" class="pq-stale-banner" style="display: none;">
+          <div>
+            <span class="badge-stale">Stale Skipped</span>
+            <span id="pq-stale-text" style="margin-left: 0.35rem;">Node already finalized with lower cost!</span>
+          </div>
+          <span>⏩ Skipped</span>
+        </div>
+
+        <div class="pq-container" id="pq-list">
+          <div class="pq-empty-state">Priority Queue is empty. Start search to push initial node.</div>
+        </div>
+      </div>
+
+      <!-- Visited / Finalized Table Card -->
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">
+            <span class="card-title-icon">📋</span> Finalized Costs & Parents
+          </div>
+          <span class="badge-tag" id="finalized-count-badge">0 finalized</span>
+        </div>
+
+        <div class="visited-table-wrapper">
+          <table class="visited-table">
+            <thead>
+              <tr>
+                <th>Node</th>
+                <th>Status</th>
+                <th>Cost g(n)</th>
+                <th>Parent</th>
+              </tr>
+            </thead>
+            <tbody id="visited-table-body">
+              <tr>
+                <td colspan="4" style="text-align: center; color: var(--text-dim); padding: 1rem;">No nodes explored yet.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+    </aside>
+  </main>
+
+  <!-- Bottom Drawer: Graph Editor & History Audit Log -->
+  <section class="editor-section">
+    <div class="editor-grid">
+      <!-- Step-by-Step History Log -->
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">
+            <span class="card-title-icon">📜</span> Search Trace History
+          </div>
+          <button class="tool-btn" id="btn-clear-log" style="font-size: 0.65rem;">Clear Log</button>
+        </div>
+        <div class="history-log-box" id="history-log">
+          <div class="log-entry">Waiting for search execution...</div>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- Main JavaScript Logic -->
+  <script src="app.js"></script>
+</body>
+</html>
